@@ -1,121 +1,88 @@
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import status
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
-from .models import YogaPractice, UserYogaPractice, YogaProgress
+from .models import UserSettings
 
-class YogaPracticesView(APIView):
+class UserSettingsView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        dosha_type = request.GET.get('dosha', None)
-        
-        if dosha_type:
-            practices = YogaPractice.objects.filter(dosha_type=dosha_type)
-        else:
-            practices = YogaPractice.objects.all()
-            
-        practice_data = []
-        for practice in practices:
-            # Check if user has completed this practice
-            user_practice = UserYogaPractice.objects.filter(
-                user=request.user, 
-                practice=practice
-            ).first()
-            
-            practice_data.append({
-                'id': practice.id,
-                'name': practice.name,
-                'description': practice.description,
-                'duration': practice.duration,
-                'dosha_type': practice.dosha_type,
-                'practice_type': practice.practice_type,
-                'benefits': practice.benefits,
-                'difficulty': practice.difficulty,
-                'completed': user_practice.completed if user_practice else False,
-                'completion_date': user_practice.completion_date if user_practice and user_practice.completion_date else None,
-            })
-            
-        return Response({'practices': practice_data})
-
-class StartYogaPracticeView(APIView):
-    permission_classes = [IsAuthenticated]
-    
-    def post(self, request, practice_id):
-        practice = get_object_or_404(YogaPractice, id=practice_id)
-        
-        # Create or get user practice record
-        user_practice, created = UserYogaPractice.objects.get_or_create(
-            user=request.user,
-            practice=practice,
-            defaults={'completed': False}
+        # Get or create user settings
+        user_settings, created = UserSettings.objects.get_or_create(  # type: ignore
+            user=request.user
         )
         
         return Response({
-            'message': f'Started practice: {practice.name}',
-            'practice_id': practice.id,
-            'duration': practice.duration
+            'dark_mode': user_settings.dark_mode,
+            'language': user_settings.language,
+            'auto_sync': user_settings.auto_sync,
+            'daily_reminders': user_settings.daily_reminders,
+            'assessment_alerts': user_settings.assessment_alerts,
+            'health_insights': user_settings.health_insights,
+            'data_backup': user_settings.data_backup,
+            'analytics': user_settings.analytics,
+            'preferred_practice_time': user_settings.preferred_practice_time,
+            'dietary_restrictions': user_settings.get_dietary_restrictions_list(),
+            'favorite_cuisines': user_settings.get_favorite_cuisines_list(),
         })
-
-class CompleteYogaPracticeView(APIView):
-    permission_classes = [IsAuthenticated]
     
-    def post(self, request, practice_id):
-        practice = get_object_or_404(YogaPractice, id=practice_id)
-        
-        # Get or create user practice record
-        user_practice, created = UserYogaPractice.objects.get_or_create(
-            user=request.user,
-            practice=practice
+    def put(self, request):
+        # Get or create user settings
+        user_settings, created = UserSettings.objects.get_or_create(  # type: ignore
+            user=request.user
         )
         
-        # Mark as completed
-        user_practice.completed = True
-        user_practice.completion_date = timezone.now()
-        user_practice.duration_completed = practice.duration
-        user_practice.save()
+        # Update settings based on request data
+        settings_data = request.data.get('settings', {})
         
-        # Update progress
-        progress, created = YogaProgress.objects.get_or_create(user=request.user)
-        progress.total_sessions += 1
-        progress.total_minutes += practice.duration
-        
-        # Update streak logic
-        if progress.last_practice_date:
-            # Check if this is a consecutive day
-            if (timezone.now().date() - progress.last_practice_date.date()).days == 1:
-                progress.current_streak += 1
-            elif (timezone.now().date() - progress.last_practice_date.date()).days > 1:
-                progress.current_streak = 1
-        else:
-            progress.current_streak = 1
+        # App Preferences
+        if 'dark_mode' in settings_data:
+            user_settings.dark_mode = settings_data['dark_mode']
+        if 'language' in settings_data:
+            user_settings.language = settings_data['language']
+        if 'auto_sync' in settings_data:
+            user_settings.auto_sync = settings_data['auto_sync']
             
-        progress.last_practice_date = timezone.now()
-        
-        # Update favorite style if this practice type is done most
-        if practice.practice_type:
-            progress.favorite_style = practice.practice_type
+        # Notifications
+        if 'daily_reminders' in settings_data:
+            user_settings.daily_reminders = settings_data['daily_reminders']
+        if 'assessment_alerts' in settings_data:
+            user_settings.assessment_alerts = settings_data['assessment_alerts']
+        if 'health_insights' in settings_data:
+            user_settings.health_insights = settings_data['health_insights']
             
-        progress.save()
+        # Data & Privacy
+        if 'data_backup' in settings_data:
+            user_settings.data_backup = settings_data['data_backup']
+        if 'analytics' in settings_data:
+            user_settings.analytics = settings_data['analytics']
+            
+        # Wellness Preferences
+        if 'preferred_practice_time' in settings_data:
+            user_settings.preferred_practice_time = settings_data['preferred_practice_time']
+            
+        # Dietary Preferences
+        if 'dietary_restrictions' in settings_data:
+            user_settings.dietary_restrictions = ','.join(settings_data['dietary_restrictions']) if isinstance(settings_data['dietary_restrictions'], list) else settings_data['dietary_restrictions']
+        if 'favorite_cuisines' in settings_data:
+            user_settings.favorite_cuisines = ','.join(settings_data['favorite_cuisines']) if isinstance(settings_data['favorite_cuisines'], list) else settings_data['favorite_cuisines']
+        
+        user_settings.save()
         
         return Response({
-            'message': f'Practice completed: {practice.name}',
-            'practice_id': practice.id,
-            'completed': True
-        })
-
-class YogaProgressView(APIView):
-    permission_classes = [IsAuthenticated]
-    
-    def get(self, request):
-        progress, created = YogaProgress.objects.get_or_create(user=request.user)
-        
-        return Response({
-            'current_streak': progress.current_streak,
-            'total_sessions': progress.total_sessions,
-            'total_minutes': progress.total_minutes,
-            'favorite_style': progress.favorite_style,
-            'last_practice_date': progress.last_practice_date
+            'message': 'Settings updated successfully',
+            'settings': {
+                'dark_mode': user_settings.dark_mode,
+                'language': user_settings.language,
+                'auto_sync': user_settings.auto_sync,
+                'daily_reminders': user_settings.daily_reminders,
+                'assessment_alerts': user_settings.assessment_alerts,
+                'health_insights': user_settings.health_insights,
+                'data_backup': user_settings.data_backup,
+                'analytics': user_settings.analytics,
+                'preferred_practice_time': user_settings.preferred_practice_time,
+                'dietary_restrictions': user_settings.get_dietary_restrictions_list(),
+                'favorite_cuisines': user_settings.get_favorite_cuisines_list(),
+            }
         })

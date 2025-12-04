@@ -1,5 +1,6 @@
 from django.apps import AppConfig
 
-class YogaConfig(AppConfig):
+
+class UserSettingsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'yoga'
+    name = 'user_settings'
