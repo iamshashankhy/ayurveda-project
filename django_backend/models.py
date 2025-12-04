@@ -1,7 +1,8 @@
 from django.conf import settings
 from django.db import models
+from django.contrib.auth.models import User
 
-class MealPlan(models.Model):
+class YogaPractice(models.Model):
     DOSHA_CHOICES = [
         ('vata', 'Vata'),
         ('pitta', 'Pitta'),
@@ -11,56 +12,43 @@ class MealPlan(models.Model):
     
     name = models.CharField(max_length=200)
     description = models.TextField()
+    duration = models.PositiveIntegerField(help_text="Duration in minutes")
     dosha_type = models.CharField(max_length=20, choices=DOSHA_CHOICES)
-    meal_type = models.CharField(max_length=50, choices=[
-        ('breakfast', 'Breakfast'),
-        ('lunch', 'Lunch'),
-        ('dinner', 'Dinner'),
-        ('snack', 'Snack'),
-    ])
-    ingredients = models.TextField(help_text="List of ingredients separated by commas")
-    preparation = models.TextField()
+    practice_type = models.CharField(max_length=100, help_text="e.g., Asana, Pranayama, Meditation")
     benefits = models.TextField()
-    calories = models.PositiveIntegerField(default=0)
+    difficulty = models.CharField(max_length=20, choices=[
+        ('beginner', 'Beginner'),
+        ('intermediate', 'Intermediate'),
+        ('advanced', 'Advanced'),
+    ])
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return f"{self.name} ({self.dosha_type})"
+        return str(self.name)
 
-class UserMealPlan(models.Model):
+class UserYogaPractice(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    meal_plan = models.ForeignKey(MealPlan, on_delete=models.CASCADE)
-    date = models.DateField()
+    practice = models.ForeignKey(YogaPractice, on_delete=models.CASCADE)
     completed = models.BooleanField(default=False)
-    completion_time = models.DateTimeField(null=True, blank=True)
+    completion_date = models.DateTimeField(null=True, blank=True)
+    duration_completed = models.PositiveIntegerField(null=True, blank=True, help_text="Minutes completed")
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        unique_together = ('user', 'meal_plan', 'date')
+        unique_together = ('user', 'practice')
     
     def __str__(self):
-        return f"{self.user} - {self.meal_plan.name} on {self.date}"
+        return f"{self.user} - {self.practice.name}"
 
-class HydrationLog(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    date = models.DateField()
-    water_amount = models.PositiveIntegerField(help_text="Amount of water in ml")
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        unique_together = ('user', 'date')
-    
-    def __str__(self):
-        return f"{self.user} - {self.water_amount}ml on {self.date}"
-
-class DietProgress(models.Model):
+class YogaProgress(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     current_streak = models.PositiveIntegerField(default=0)
-    total_meals_completed = models.PositiveIntegerField(default=0)
-    total_water_intake = models.PositiveIntegerField(default=0, help_text="Total water intake in ml")
-    last_meal_date = models.DateField(null=True, blank=True)
+    total_sessions = models.PositiveIntegerField(default=0)
+    total_minutes = models.PositiveIntegerField(default=0)
+    favorite_style = models.CharField(max_length=100, blank=True)
+    last_practice_date = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return f"Diet Progress for {self.user}"
+        return f"Progress for {self.user}"

@@ -4,143 +4,118 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Sum
-from datetime import date, timedelta
-from .models import MealPlan, UserMealPlan, HydrationLog, DietProgress
+from .models import YogaPractice, UserYogaPractice, YogaProgress
 
-class DietPlanView(APIView):
+class YogaPracticesView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
         dosha_type = request.GET.get('dosha', None)
         
         if dosha_type:
-            meal_plans = MealPlan.objects.filter(dosha_type=dosha_type)
+            practices = YogaPractice.objects.filter(dosha_type=dosha_type)
         else:
-            meal_plans = MealPlan.objects.all()
+            practices = YogaPractice.objects.all()
             
-        # Group meals by type
-        breakfast_meals = meal_plans.filter(meal_type='breakfast')
-        lunch_meals = meal_plans.filter(meal_type='lunch')
-        dinner_meals = meal_plans.filter(meal_type='dinner')
-        snack_meals = meal_plans.filter(meal_type='snack')
-        
-        # Get user's completed meals for today
-        today = date.today()
-        user_meals = UserMealPlan.objects.filter(
-            user=request.user,
-            date=today
-        )
-        
-        def serialize_meal(meal):
-            user_meal = user_meals.filter(meal_plan=meal).first()
-            return {
-                'id': meal.id,
-                'name': meal.name,
-                'description': meal.description,
-                'meal_type': meal.meal_type,
-                'ingredients': meal.ingredients.split(','),
-                'preparation': meal.preparation,
-                'benefits': meal.benefits,
-                'calories': meal.calories,
-                'completed': user_meal.completed if user_meal else False,
-                'completion_time': user_meal.completion_time if user_meal else None,
-            }
-        
-        return Response({
-            'breakfast': [serialize_meal(meal) for meal in breakfast_meals],
-            'lunch': [serialize_meal(meal) for meal in lunch_meals],
-            'dinner': [serialize_meal(meal) for meal in dinner_meals],
-            'snacks': [serialize_meal(meal) for meal in snack_meals],
-        })
+        practice_data = []
+        for practice in practices:
+            # Check if user has completed this practice
+            user_practice = UserYogaPractice.objects.filter(
+                user=request.user, 
+                practice=practice
+            ).first()
+            
+            practice_data.append({
+                'id': practice.id,
+                'name': practice.name,
+                'description': practice.description,
+                'duration': practice.duration,
+                'dosha_type': practice.dosha_type,
+                'practice_type': practice.practice_type,
+                'benefits': practice.benefits,
+                'difficulty': practice.difficulty,
+                'completed': user_practice.completed if user_practice else False,
+                'completion_date': user_practice.completion_date if user_practice and user_practice.completion_date else None,
+            })
+            
+        return Response({'practices': practice_data})
 
-class MarkMealCompletedView(APIView):
+class StartYogaPracticeView(APIView):
     permission_classes = [IsAuthenticated]
     
-    def post(self, request, meal_id):
-        meal_plan = get_object_or_404(MealPlan, id=meal_id)
-        today = date.today()
+    def post(self, request, practice_id):
+        practice = get_object_or_404(YogaPractice, id=practice_id)
         
-        # Get or create user meal plan record
-        user_meal, created = UserMealPlan.objects.get_or_create(
+        # Create or get user practice record
+        user_practice, created = UserYogaPractice.objects.get_or_create(
             user=request.user,
-            meal_plan=meal_plan,
-            date=today,
+            practice=practice,
             defaults={'completed': False}
         )
         
+        return Response({
+            'message': f'Started practice: {practice.name}',
+            'practice_id': practice.id,
+            'duration': practice.duration
+        })
+
+class CompleteYogaPracticeView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request, practice_id):
+        practice = get_object_or_404(YogaPractice, id=practice_id)
+        
+        # Get or create user practice record
+        user_practice, created = UserYogaPractice.objects.get_or_create(
+            user=request.user,
+            practice=practice
+        )
+        
         # Mark as completed
-        user_meal.completed = True
-        user_meal.completion_time = timezone.now()
-        user_meal.save()
+        user_practice.completed = True
+        user_practice.completion_date = timezone.now()
+        user_practice.duration_completed = practice.duration
+        user_practice.save()
         
         # Update progress
-        progress, created = DietProgress.objects.get_or_create(user=request.user)
-        progress.total_meals_completed += 1
+        progress, created = YogaProgress.objects.get_or_create(user=request.user)
+        progress.total_sessions += 1
+        progress.total_minutes += practice.duration
         
         # Update streak logic
-        if progress.last_meal_date:
+        if progress.last_practice_date:
             # Check if this is a consecutive day
-            if (today - progress.last_meal_date).days == 1:
+            if (timezone.now().date() - progress.last_practice_date.date()).days == 1:
                 progress.current_streak += 1
-            elif (today - progress.last_meal_date).days > 1:
+            elif (timezone.now().date() - progress.last_practice_date.date()).days > 1:
                 progress.current_streak = 1
         else:
             progress.current_streak = 1
             
-        progress.last_meal_date = today
+        progress.last_practice_date = timezone.now()
+        
+        # Update favorite style if this practice type is done most
+        if practice.practice_type:
+            progress.favorite_style = practice.practice_type
+            
         progress.save()
         
         return Response({
-            'message': f'Meal completed: {meal_plan.name}',
-            'meal_id': meal_plan.id,
+            'message': f'Practice completed: {practice.name}',
+            'practice_id': practice.id,
             'completed': True
         })
 
-class HydrationView(APIView):
+class YogaProgressView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        today = date.today()
-        hydration_log = HydrationLog.objects.filter(
-            user=request.user,
-            date=today
-        ).first()
-        
-        # Get weekly hydration data
-        week_start = today - timedelta(days=today.weekday())
-        weekly_data = HydrationLog.objects.filter(
-            user=request.user,
-            date__gte=week_start
-        ).values('date').annotate(daily_total=Sum('water_amount')).order_by('date')
+        progress, created = YogaProgress.objects.get_or_create(user=request.user)
         
         return Response({
-            'today_intake': hydration_log.water_amount if hydration_log else 0,
-            'weekly_data': list(weekly_data),
-            'goal': 2000  # 2 liters as default goal
-        })
-    
-    def post(self, request):
-        amount = request.data.get('amount', 0)
-        today = date.today()
-        
-        # Get or create hydration log for today
-        hydration_log, created = HydrationLog.objects.get_or_create(
-            user=request.user,
-            date=today,
-            defaults={'water_amount': 0}
-        )
-        
-        # Add to water amount
-        hydration_log.water_amount += int(amount)
-        hydration_log.save()
-        
-        # Update progress
-        progress, created = DietProgress.objects.get_or_create(user=request.user)
-        progress.total_water_intake += int(amount)
-        progress.save()
-        
-        return Response({
-            'message': f'Added {amount}ml to hydration log',
-            'total_intake': hydration_log.water_amount
+            'current_streak': progress.current_streak,
+            'total_sessions': progress.total_sessions,
+            'total_minutes': progress.total_minutes,
+            'favorite_style': progress.favorite_style,
+            'last_practice_date': progress.last_practice_date
         })

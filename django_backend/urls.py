@@ -1,13 +1,14 @@
 from django.urls import path
 from .views import (
-    DietPlanView,
-    MarkMealCompletedView,
-    HydrationView,
+    YogaPracticesView,
+    StartYogaPracticeView,
+    CompleteYogaPracticeView,
+    YogaProgressView,
 )
 
 urlpatterns = [
-    path('plan/', DietPlanView.as_view(), name='diet_plan'),
-    path('meals/<int:meal_id>/complete/', MarkMealCompletedView.as_view(), name='mark_meal_completed'),
-    path('hydration/', HydrationView.as_view(), name='hydration'),
-    path('hydration/add/', HydrationView.as_view(), name='add_hydration'),
+    path('practices/', YogaPracticesView.as_view(), name='yoga_practices'),
+    path('practices/<int:practice_id>/start/', StartYogaPracticeView.as_view(), name='start_yoga_practice'),
+    path('practices/<int:practice_id>/complete/', CompleteYogaPracticeView.as_view(), name='complete_yoga_practice'),
+    path('progress/', YogaProgressView.as_view(), name='yoga_progress'),
 ]
